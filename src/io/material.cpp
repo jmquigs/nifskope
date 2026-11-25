@@ -32,6 +32,8 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "material.h"
 
+#include "gl/resolvepath.h"
+
 #include <fsengine/fsengine.h>
 #include <fsengine/fsmanager.h>
 
@@ -102,33 +104,58 @@ QByteArray Material::find( QString path )
 	QSettings settings;
 	QStringList folders = settings.value( "Settings/Resources/Folders", QStringList() ).toStringList();
 
-	QString filename;
-	QDir dir;
-	for ( QString folder : folders ) {
-		dir.setPath( folder );
+	// Normalize '\' separators, which QDir does not handle on non-Windows platforms
+	path.replace( '\\', '/' );
 
-		if ( dir.exists( path ) ) {
-			filename = QDir::fromNativeSeparators( dir.filePath( path ) );
+	qCInfo( lcTexture ).noquote() << QString( "Material lookup \"%1\"" ).arg( path );
 
+	if ( folders.isEmpty() )
+		qCInfo( lcTexture ) << "  (no resource folders configured)";
+
+	for ( int i = 0; i < folders.size(); i++ ) {
+		const QString & folder = folders.at( i );
+		QString detail;
+		QString filename = resolvePathCI( folder, path, &detail );
+		if ( !filename.isEmpty() ) {
 			QFile f( filename );
-			if ( f.open( QIODevice::ReadOnly ) )
+			if ( f.open( QIODevice::ReadOnly ) ) {
+				qCInfo( lcTexture ).noquote() << QString( "  [folder %1/%2] \"%3\": HIT (%4)\n  => %5" )
+					.arg( i + 1 ).arg( folders.size() ).arg( folder, detail, filename );
 				return f.readAll();
+			}
+			detail = "found but could not be opened: " + f.errorString();
 		}
+		qCInfo( lcTexture ).noquote() << QString( "  [folder %1/%2] \"%3\": miss (%4)" )
+			.arg( i + 1 ).arg( folders.size() ).arg( folder, detail );
 	}
 
-	for ( FSArchiveFile * archive : FSManager::archiveList() ) {
+	// Archive keys are lowercase with '/' separators
+	const QString archivePath = path.toLower();
+	const QList<FSArchiveFile *> archives = FSManager::archiveList();
+	if ( archives.isEmpty() )
+		qCInfo( lcTexture ) << "  (no archives loaded)";
+
+	for ( FSArchiveFile * archive : archives ) {
 		if ( archive ) {
-			filename = QDir::fromNativeSeparators( path.toLower() );
-			if ( archive->hasFile( filename ) ) {
+			if ( archive->hasFile( archivePath ) ) {
 				QByteArray outData;
-				archive->fileContents( filename, outData );
+				archive->fileContents( archivePath, outData );
 
 				if ( !outData.isEmpty() ) {
+					qCInfo( lcTexture ).noquote()
+						<< QString( "  [archive] \"%1\": HIT\n  => %2 (from archive)" ).arg( archive->path(), archivePath );
 					return outData;
 				}
+
+				qCInfo( lcTexture ).noquote()
+					<< QString( "  [archive] \"%1\": file listed but contents empty" ).arg( archive->path() );
+			} else {
+				qCInfo( lcTexture ).noquote() << QString( "  [archive] \"%1\": miss" ).arg( archive->path() );
 			}
 		}
 	}
+
+	qCInfo( lcTexture ).noquote() << QString( "  => NOT FOUND: \"%1\"" ).arg( path );
 
 	return QByteArray();
 }

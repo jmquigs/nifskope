@@ -8,6 +8,7 @@
 #include "ui/settingsdialog.h"
 
 #include "nifskope.h"
+#include "gl/resolvepath.h"
 
 #include <fsengine/fsengine.h>
 #include <fsengine/fsmanager.h>
@@ -588,6 +589,7 @@ void SettingsResources::write()
 	QSettings settings;
 
 	settings.setValue( "Settings/Resources/Folders", folders->stringList() );
+	resolvePathCIClearCache();
 	settings.setValue( "Settings/Resources/Archives", archives->stringList() );
 
 	// Sync FSManager to Archives list

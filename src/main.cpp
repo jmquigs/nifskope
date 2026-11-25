@@ -40,6 +40,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <QCommandLineParser>
 #include <QDesktopServices>
 #include <QDir>
+#include <QLoggingCategory>
 #include <QSettings>
 #include <QStack>
 #include <QUdpSocket>
@@ -66,6 +67,13 @@ QCoreApplication * createApplication( int &argc, char *argv[] )
 //! The main program
 int main( int argc, char * argv[] )
 {
+#ifdef Q_OS_LINUX
+	// The QGLWidget-based 3D view renders incorrectly on Qt5's native Wayland
+	// backend but works under XWayland, so default to xcb unless overridden.
+	if ( !qEnvironmentVariableIsSet( "QT_QPA_PLATFORM" ) && qEnvironmentVariableIsSet( "WAYLAND_DISPLAY" ) )
+		qputenv( "QT_QPA_PLATFORM", "xcb" );
+#endif
+
 	QScopedPointer<QCoreApplication> app( createApplication( argc, argv ) );
 
 	if ( auto a = qobject_cast<QApplication *>(app.data()) ) {
@@ -110,8 +118,15 @@ int main( int argc, char * argv[] )
 		QCommandLineOption portOption( {"p", "port"}, "Port NifSkope listens on", "port" );
 		parser.addOption( portOption );
 
+		QCommandLineOption debugTexturesOption( "debug-textures",
+			"Log texture and material lookups (which folders/archives are searched and why files are not found) to stderr" );
+		parser.addOption( debugTexturesOption );
+
 		// Process options
 		parser.process( *a );
+
+		if ( parser.isSet( debugTexturesOption ) )
+			QLoggingCategory::setFilterRules( "nifskope.texture.info=true" );
 
 		// Override port value
 		if ( parser.isSet( portOption ) )
