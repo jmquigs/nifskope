@@ -29,14 +29,17 @@ jobs:
             qtbase5-dev qt5-qmake qtbase5-dev-tools libqt5opengl5-dev \
             libgl1-mesa-dev libglu1-mesa-dev
 
+      # NifSkope.pro hardcodes include paths as ../nifskope/lib/..., so the
+      # build dir must be a sibling of a source dir named "nifskope" (which
+      # is what actions/checkout produces).
       - name: Configure
         run: |
-          mkdir _build
-          cd _build
-          qmake ../NifSkope.pro CONFIG+=release
+          mkdir ../_build
+          cd ../_build
+          qmake ../nifskope/NifSkope.pro CONFIG+=release
 
       - name: Build
-        run: make -C _build -j"$(nproc)"
+        run: make -C ../_build -j"$(nproc)"
 
       - name: Package
         id: pkg
@@ -51,7 +54,7 @@ jobs:
             label="$(echo "$GITHUB_REF_NAME" | tr '/' '-')-${GITHUB_SHA::7}"
           fi
           name="NifSkope-${label}-linux-x86_64"
-          mv _build/release "$name"
+          mv ../_build/release "$name"
           tar czf "$name.tar.gz" "$name"
           echo "name=$name" >> "$GITHUB_OUTPUT"
 
