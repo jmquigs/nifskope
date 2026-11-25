@@ -2,6 +2,7 @@
 #include "ui_lightingwidget.h"
 
 #include "glview.h"
+#include <QAction>
 
 
 // Slider lambda
