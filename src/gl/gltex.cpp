@@ -166,15 +166,21 @@ QString TexCache::find( const QString & file, const QString & nifdir, QByteArray
 	if ( file.isEmpty() )
 		return QString();
 
-	if ( QFile( file ).exists() )
+	qCInfo( lcTexture ).noquote() << QString( "Texture lookup \"%1\" (nif folder \"%2\")" ).arg( file, nifdir );
+
+	if ( QFile( file ).exists() ) {
+		qCInfo( lcTexture ).noquote() << "  => found as given:" << file;
 		return file;
+	}
 
 	// Nif texture paths use '\' separators, which QDir does not treat as
 	// separators on non-Windows platforms, so normalize to '/'.
 	QString filename = QString( file ).replace( '\\', '/' );
 
-	if ( filename != file && QFile( filename ).exists() )
+	if ( filename != file && QFile( filename ).exists() ) {
+		qCInfo( lcTexture ).noquote() << "  => found as given:" << filename;
 		return filename;
+	}
 
 	QSettings settings;
 
@@ -197,6 +203,17 @@ QString TexCache::find( const QString & file, const QString & nifdir, QByteArray
 		}
 	}
 
+	// Look up filename under base, logging the result
+	auto tryFolder = [&filename]( const QString & label, const QString & base ) {
+		QString detail;
+		QString found = resolvePathCI( base, filename, &detail );
+		if ( found.isEmpty() )
+			qCInfo( lcTexture ).noquote() << QString( "  %1 \"%2\": miss (%3)" ).arg( label, base, detail );
+		else
+			qCInfo( lcTexture ).noquote() << QString( "  %1 \"%2\": HIT (%3)\n  => %4" ).arg( label, base, detail, found );
+		return found;
+	};
+
 	// attempt to find the texture in one of the folders
 	QString found;
 	for ( const QString& ext : extensions ) {
@@ -204,30 +221,39 @@ QString TexCache::find( const QString & file, const QString & nifdir, QByteArray
 			filename += ext;
 		}
 
+		qCInfo( lcTexture ).noquote() << QString( "  trying \"%1\"" ).arg( filename );
+
 		auto appdir = QDir::currentPath();
-		
+
 		// First search NIF root
-		found = resolvePathCI( nifdir, filename );
+		found = tryFolder( "[nif folder]", nifdir );
 		if ( !found.isEmpty() )
 			return found;
 
 		// Next search NifSkope dir
-		found = resolvePathCI( appdir, filename );
+		found = tryFolder( "[app folder]", appdir );
 		if ( !found.isEmpty() )
 			return found;
 
-		
+
 		QStringList folders = settings.value( "Settings/Resources/Folders", QStringList() ).toStringList();
 
-		for ( QString folder : folders ) {
+		if ( folders.isEmpty() )
+			qCInfo( lcTexture ) << "  (no resource folders configured)";
+
+		for ( int i = 0; i < folders.size(); i++ ) {
+			QString folder = folders.at( i );
+			QString label = QString( "[folder %1/%2]" ).arg( i + 1 ).arg( folders.size() );
+
 			// TODO: Always search nifdir without requiring a relative entry
 			// in folders?  Not too intuitive to require ".\" in your texture folder list
 			// even if it is added by default.
 			if ( folder.startsWith( "./" ) || folder.startsWith( ".\\" ) ) {
 				folder = nifdir + "/" + folder;
+				label += QString( " (\"%1\" relative to nif)" ).arg( folders.at( i ) );
 			}
 
-			found = resolvePathCI( folder, filename );
+			found = tryFolder( label, folder );
 			if ( !found.isEmpty() )
 				return QDir::toNativeSeparators( found );
 		}
@@ -235,16 +261,27 @@ QString TexCache::find( const QString & file, const QString & nifdir, QByteArray
 		// Search through archives last, and load any requested textures into memory.
 		// Archive keys are lowercase with '/' separators.
 		const QString archivePath = filename.toLower();
-		for ( FSArchiveFile * archive : FSManager::archiveList() ) {
+		const QList<FSArchiveFile *> archives = FSManager::archiveList();
+		if ( archives.isEmpty() )
+			qCInfo( lcTexture ) << "  (no archives loaded)";
+
+		for ( FSArchiveFile * archive : archives ) {
 			if ( archive ) {
 				if ( archive->hasFile( archivePath ) ) {
 					QByteArray outData;
 					archive->fileContents( archivePath, outData );
 
 					if ( !outData.isEmpty() ) {
+						qCInfo( lcTexture ).noquote()
+							<< QString( "  [archive] \"%1\": HIT\n  => %2 (from archive)" ).arg( archive->path(), archivePath );
 						data = outData;
 						return QDir::toNativeSeparators( archivePath );
 					}
+
+					qCInfo( lcTexture ).noquote()
+						<< QString( "  [archive] \"%1\": file listed but contents empty" ).arg( archive->path() );
+				} else {
+					qCInfo( lcTexture ).noquote() << QString( "  [archive] \"%1\": miss" ).arg( archive->path() );
 				}
 			}
 		}
@@ -265,8 +302,10 @@ QString TexCache::find( const QString & file, const QString & nifdir, QByteArray
 			}
 
 			// Only retry with a different path, otherwise e.g. a missing "shaders/..." path recurses forever
-			if ( altname != filename )
+			if ( altname != filename ) {
+				qCInfo( lcTexture ).noquote() << QString( "  not found; retrying as \"%1\"" ).arg( altname );
 				return find( altname, nifdir, data );
+			}
 		}
 
 		if ( !replaceExt )
@@ -275,6 +314,8 @@ QString TexCache::find( const QString & file, const QString & nifdir, QByteArray
 		// Remove file extension
 		filename = filename.left( filename.length() - ext.length() );
 	}
+
+	qCInfo( lcTexture ).noquote() << QString( "  => NOT FOUND: \"%1\"" ).arg( file );
 
 	// Fix separators
 	filename = QDir::toNativeSeparators( filename );
@@ -375,8 +416,10 @@ int TexCache::bind( const QString & fname )
 
 		textures.insert( tx->filename, tx );
 
-		if ( !isSupported( fname ) )
+		if ( !isSupported( fname ) ) {
+			qCInfo( lcTexture ).noquote() << QString( "Texture \"%1\": unsupported file type, skipped" ).arg( fname );
 			tx->id = 0xFFFFFFFF;
+		}
 	}
 
 	if ( tx->id == 0xFFFFFFFF )
@@ -397,6 +440,14 @@ int TexCache::bind( const QString & fname )
 			watcher->addPath( tx->filepath );
 
 		tx->load();
+
+		if ( !tx->status.isEmpty() )
+			qCInfo( lcTexture ).noquote() << QString( "Texture \"%1\": load FAILED from \"%2\": %3" )
+				.arg( tx->filename, tx->filepath, tx->status );
+		else
+			qCInfo( lcTexture ).noquote() << QString( "Texture \"%1\": loaded %2x%3 from %4\"%5\"" )
+				.arg( tx->filename ).arg( tx->width ).arg( tx->height )
+				.arg( tx->data.isEmpty() ? "" : "archive path " ).arg( tx->filepath );
 	} else {
 		if ( !tx->target )
 			tx->target = GL_TEXTURE_2D;

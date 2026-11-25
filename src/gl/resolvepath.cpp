@@ -2,6 +2,8 @@
 
 #include <QDir>
 
+Q_LOGGING_CATEGORY( lcTexture, "nifskope.texture", QtWarningMsg )
+
 #ifndef Q_OS_WIN
 #include <QHash>
 #include <QStringList>
@@ -23,13 +25,26 @@ const QStringList & listDir( const QString & path )
 }
 #endif
 
-QString resolvePathCI( const QString & base, const QString & rel )
+QString resolvePathCI( const QString & base, const QString & rel, QString * detail )
 {
+	auto setDetail = [detail]( const QString & d ) {
+		if ( detail )
+			*detail = d;
+	};
+
 	QDir dir( base );
-	if ( dir.exists( rel ) )
+	if ( dir.exists( rel ) ) {
+		setDetail( "exact match" );
 		return dir.filePath( rel );
+	}
+
+	if ( !dir.exists() ) {
+		setDetail( "folder does not exist" );
+		return QString();
+	}
 
 #ifdef Q_OS_WIN
+	setDetail( "not found" );
 	return QString();
 #else
 	QString current = dir.absolutePath();
@@ -40,8 +55,10 @@ QString resolvePathCI( const QString & base, const QString & rel )
 
 		if ( part == ".." ) {
 			QDir up( current );
-			if ( !up.cdUp() )
+			if ( !up.cdUp() ) {
+				setDetail( QString( "cannot go up from %1" ).arg( current ) );
 				return QString();
+			}
 			current = up.absolutePath();
 			continue;
 		}
@@ -56,12 +73,15 @@ QString resolvePathCI( const QString & base, const QString & rel )
 			}
 		}
 
-		if ( match.isEmpty() )
+		if ( match.isEmpty() ) {
+			setDetail( QString( "no entry matching \"%1\" in %2" ).arg( part, current ) );
 			return QString();
+		}
 
 		current = QDir( current ).filePath( match );
 	}
 
+	setDetail( "case-insensitive match" );
 	return current;
 #endif
 }

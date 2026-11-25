@@ -107,29 +107,55 @@ QByteArray Material::find( QString path )
 	// Normalize '\' separators, which QDir does not handle on non-Windows platforms
 	path.replace( '\\', '/' );
 
-	for ( QString folder : folders ) {
-		QString filename = resolvePathCI( folder, path );
+	qCInfo( lcTexture ).noquote() << QString( "Material lookup \"%1\"" ).arg( path );
+
+	if ( folders.isEmpty() )
+		qCInfo( lcTexture ) << "  (no resource folders configured)";
+
+	for ( int i = 0; i < folders.size(); i++ ) {
+		const QString & folder = folders.at( i );
+		QString detail;
+		QString filename = resolvePathCI( folder, path, &detail );
 		if ( !filename.isEmpty() ) {
 			QFile f( filename );
-			if ( f.open( QIODevice::ReadOnly ) )
+			if ( f.open( QIODevice::ReadOnly ) ) {
+				qCInfo( lcTexture ).noquote() << QString( "  [folder %1/%2] \"%3\": HIT (%4)\n  => %5" )
+					.arg( i + 1 ).arg( folders.size() ).arg( folder, detail, filename );
 				return f.readAll();
+			}
+			detail = "found but could not be opened: " + f.errorString();
 		}
+		qCInfo( lcTexture ).noquote() << QString( "  [folder %1/%2] \"%3\": miss (%4)" )
+			.arg( i + 1 ).arg( folders.size() ).arg( folder, detail );
 	}
 
 	// Archive keys are lowercase with '/' separators
 	const QString archivePath = path.toLower();
-	for ( FSArchiveFile * archive : FSManager::archiveList() ) {
+	const QList<FSArchiveFile *> archives = FSManager::archiveList();
+	if ( archives.isEmpty() )
+		qCInfo( lcTexture ) << "  (no archives loaded)";
+
+	for ( FSArchiveFile * archive : archives ) {
 		if ( archive ) {
 			if ( archive->hasFile( archivePath ) ) {
 				QByteArray outData;
 				archive->fileContents( archivePath, outData );
 
 				if ( !outData.isEmpty() ) {
+					qCInfo( lcTexture ).noquote()
+						<< QString( "  [archive] \"%1\": HIT\n  => %2 (from archive)" ).arg( archive->path(), archivePath );
 					return outData;
 				}
+
+				qCInfo( lcTexture ).noquote()
+					<< QString( "  [archive] \"%1\": file listed but contents empty" ).arg( archive->path() );
+			} else {
+				qCInfo( lcTexture ).noquote() << QString( "  [archive] \"%1\": miss" ).arg( archive->path() );
 			}
 		}
 	}
+
+	qCInfo( lcTexture ).noquote() << QString( "  => NOT FOUND: \"%1\"" ).arg( path );
 
 	return QByteArray();
 }

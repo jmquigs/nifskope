@@ -40,6 +40,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <QCommandLineParser>
 #include <QDesktopServices>
 #include <QDir>
+#include <QLoggingCategory>
 #include <QSettings>
 #include <QStack>
 #include <QUdpSocket>
@@ -117,8 +118,15 @@ int main( int argc, char * argv[] )
 		QCommandLineOption portOption( {"p", "port"}, "Port NifSkope listens on", "port" );
 		parser.addOption( portOption );
 
+		QCommandLineOption debugTexturesOption( "debug-textures",
+			"Log texture and material lookups (which folders/archives are searched and why files are not found) to stderr" );
+		parser.addOption( debugTexturesOption );
+
 		// Process options
 		parser.process( *a );
+
+		if ( parser.isSet( debugTexturesOption ) )
+			QLoggingCategory::setFilterRules( "nifskope.texture.info=true" );
 
 		// Override port value
 		if ( parser.isSet( portOption ) )
