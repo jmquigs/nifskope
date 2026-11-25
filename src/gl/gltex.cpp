@@ -35,6 +35,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "message.h"
 #include "gl/glscene.h"
 #include "gl/gltexloaders.h"
+#include "gl/resolvepath.h"
 #include "model/nifmodel.h"
 
 #include <fsengine/fsengine.h>
@@ -168,9 +169,14 @@ QString TexCache::find( const QString & file, const QString & nifdir, QByteArray
 	if ( QFile( file ).exists() )
 		return file;
 
-	QSettings settings;
+	// Nif texture paths use '\' separators, which QDir does not treat as
+	// separators on non-Windows platforms, so normalize to '/'.
+	QString filename = QString( file ).replace( '\\', '/' );
 
-	QString filename = QDir::toNativeSeparators( file );
+	if ( filename != file && QFile( filename ).exists() )
+		return filename;
+
+	QSettings settings;
 
 	QStringList extensions;
 	extensions << ".dds";
@@ -192,7 +198,7 @@ QString TexCache::find( const QString & file, const QString & nifdir, QByteArray
 	}
 
 	// attempt to find the texture in one of the folders
-	QDir dir;
+	QString found;
 	for ( const QString& ext : extensions ) {
 		if ( replaceExt ) {
 			filename += ext;
@@ -201,16 +207,14 @@ QString TexCache::find( const QString & file, const QString & nifdir, QByteArray
 		auto appdir = QDir::currentPath();
 		
 		// First search NIF root
-		dir.setPath( nifdir );
-		if ( dir.exists( filename ) ) {
-			return dir.filePath( filename );
-		}
+		found = resolvePathCI( nifdir, filename );
+		if ( !found.isEmpty() )
+			return found;
 
 		// Next search NifSkope dir
-		dir.setPath( appdir );
-		if ( dir.exists( filename ) ) {
-			return dir.filePath( filename );
-		}
+		found = resolvePathCI( appdir, filename );
+		if ( !found.isEmpty() )
+			return found;
 
 		
 		QStringList folders = settings.value( "Settings/Resources/Folders", QStringList() ).toStringList();
@@ -223,27 +227,23 @@ QString TexCache::find( const QString & file, const QString & nifdir, QByteArray
 				folder = nifdir + "/" + folder;
 			}
 
-			dir.setPath( folder );
-
-			if ( dir.exists( filename ) ) {
-				filename = dir.filePath( filename );
-				filename = QDir::toNativeSeparators( filename );
-				return filename;
-			}
+			found = resolvePathCI( folder, filename );
+			if ( !found.isEmpty() )
+				return QDir::toNativeSeparators( found );
 		}
 
 		// Search through archives last, and load any requested textures into memory.
+		// Archive keys are lowercase with '/' separators.
+		const QString archivePath = filename.toLower();
 		for ( FSArchiveFile * archive : FSManager::archiveList() ) {
 			if ( archive ) {
-				filename = QDir::fromNativeSeparators( filename.toLower() );
-				if ( archive->hasFile( filename ) ) {
+				if ( archive->hasFile( archivePath ) ) {
 					QByteArray outData;
-					archive->fileContents( filename, outData );
+					archive->fileContents( archivePath, outData );
 
 					if ( !outData.isEmpty() ) {
 						data = outData;
-						filename = QDir::toNativeSeparators( filename );
-						return filename;
+						return QDir::toNativeSeparators( archivePath );
 					}
 				}
 			}
@@ -251,19 +251,22 @@ QString TexCache::find( const QString & file, const QString & nifdir, QByteArray
 
 		// For Skyrim and FO4 which occasionally leave the textures off
 		if ( !filename.startsWith( "textures", Qt::CaseInsensitive ) ) {
+			QString altname = filename;
 			QRegularExpression re( "textures[\\\\/]", QRegularExpression::CaseInsensitiveOption );
-			int texIdx = filename.indexOf( re );
+			int texIdx = altname.indexOf( re );
 			if ( texIdx > 0 ) {
-				filename.remove( 0, texIdx );
+				altname.remove( 0, texIdx );
 			} else {
-				while ( filename.startsWith( "/" ) || filename.startsWith( "\\" ) )
-					filename.remove( 0, 1 );
+				while ( altname.startsWith( "/" ) )
+					altname.remove( 0, 1 );
 
-				if ( !filename.startsWith( "textures", Qt::CaseInsensitive ) && !filename.startsWith( "shaders", Qt::CaseInsensitive ) )
-					filename.prepend( "textures\\" );
+				if ( !altname.startsWith( "textures", Qt::CaseInsensitive ) && !altname.startsWith( "shaders", Qt::CaseInsensitive ) )
+					altname.prepend( "textures/" );
 			}
 
-			return find( filename, nifdir, data );
+			// Only retry with a different path, otherwise e.g. a missing "shaders/..." path recurses forever
+			if ( altname != filename )
+				return find( altname, nifdir, data );
 		}
 
 		if ( !replaceExt )

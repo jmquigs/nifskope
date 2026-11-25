@@ -154,6 +154,7 @@ HEADERS += \
 	src/gl/glscene.h \
 	src/gl/gltex.h \
 	src/gl/gltexloaders.h \
+	src/gl/resolvepath.h \
 	src/gl/gltools.h \
 	src/gl/icontrollable.h \
 	src/gl/renderer.h \
@@ -218,6 +219,7 @@ SOURCES += \
 	src/gl/glscene.cpp \
 	src/gl/gltex.cpp \
 	src/gl/gltexloaders.cpp \
+	src/gl/resolvepath.cpp \
 	src/gl/gltools.cpp \
 	src/gl/renderer.cpp \
 	src/io/material.cpp \

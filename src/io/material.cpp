@@ -32,6 +32,8 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "material.h"
 
+#include "gl/resolvepath.h"
+
 #include <fsengine/fsengine.h>
 #include <fsengine/fsmanager.h>
 
@@ -102,26 +104,25 @@ QByteArray Material::find( QString path )
 	QSettings settings;
 	QStringList folders = settings.value( "Settings/Resources/Folders", QStringList() ).toStringList();
 
-	QString filename;
-	QDir dir;
+	// Normalize '\' separators, which QDir does not handle on non-Windows platforms
+	path.replace( '\\', '/' );
+
 	for ( QString folder : folders ) {
-		dir.setPath( folder );
-
-		if ( dir.exists( path ) ) {
-			filename = QDir::fromNativeSeparators( dir.filePath( path ) );
-
+		QString filename = resolvePathCI( folder, path );
+		if ( !filename.isEmpty() ) {
 			QFile f( filename );
 			if ( f.open( QIODevice::ReadOnly ) )
 				return f.readAll();
 		}
 	}
 
+	// Archive keys are lowercase with '/' separators
+	const QString archivePath = path.toLower();
 	for ( FSArchiveFile * archive : FSManager::archiveList() ) {
 		if ( archive ) {
-			filename = QDir::fromNativeSeparators( path.toLower() );
-			if ( archive->hasFile( filename ) ) {
+			if ( archive->hasFile( archivePath ) ) {
 				QByteArray outData;
-				archive->fileContents( filename, outData );
+				archive->fileContents( archivePath, outData );
 
 				if ( !outData.isEmpty() ) {
 					return outData;
