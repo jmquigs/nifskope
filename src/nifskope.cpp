@@ -1049,8 +1049,9 @@ void NifSkope::browseStep( int delta )
 
 void NifSkope::browsePrintCurrent()
 {
+	// Prefixed so marks stand out from the lines printed after each step
 	if ( isBrowsing() )
-		browsePrint( browseLine() );
+		browsePrint( "MARK " + browseLine() );
 }
 
 QString NifSkope::browseLine() const

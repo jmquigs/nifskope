@@ -167,7 +167,7 @@ public:
 	void startBrowse( const QString & dir, const QString & startFile = QString() );
 	//! Load the file @p delta (+1 or -1) steps away in the browse list, wrapping around
 	void browseStep( int delta );
-	//! Print the browse position and path of the current file
+	//! Print "MARK " followed by the browse position and path of the current file (the X key)
 	void browsePrintCurrent();
 	//! Whether browse mode is active
 	bool isBrowsing() const { return !browseFiles.isEmpty(); }
