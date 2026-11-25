@@ -66,6 +66,13 @@ QCoreApplication * createApplication( int &argc, char *argv[] )
 //! The main program
 int main( int argc, char * argv[] )
 {
+#ifdef Q_OS_LINUX
+	// The QGLWidget-based 3D view renders incorrectly on Qt5's native Wayland
+	// backend but works under XWayland, so default to xcb unless overridden.
+	if ( !qEnvironmentVariableIsSet( "QT_QPA_PLATFORM" ) && qEnvironmentVariableIsSet( "WAYLAND_DISPLAY" ) )
+		qputenv( "QT_QPA_PLATFORM", "xcb" );
+#endif
+
 	QScopedPointer<QCoreApplication> app( createApplication( argc, argv ) );
 
 	if ( auto a = qobject_cast<QApplication *>(app.data()) ) {
