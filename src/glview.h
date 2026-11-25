@@ -80,6 +80,9 @@ public:
 	float planarAngle = 0;
 	bool frontalLight = true;
 
+	//! Browse mode (--browse): Left/Right/X are emitted as browsePrev/browseNext/browsePrint instead of moving the camera
+	bool browseMode = false;
+
 	enum AnimationStates
 	{
 		AnimDisabled = 0x0,
@@ -181,6 +184,13 @@ signals:
 	void sequenceChanged( const QString & );
 	void sequencesUpdated();
 	void sequencesDisabled( bool );
+
+	//! Browse mode: Left arrow pressed
+	void browsePrev();
+	//! Browse mode: Right arrow pressed
+	void browseNext();
+	//! Browse mode: X pressed
+	void browsePrint();
 
 protected:
 	//! Sets up the OpenGL rendering context, defines display lists, etc.

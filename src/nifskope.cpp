@@ -56,14 +56,17 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <QDebug>
 #include <QDesktopServices>
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QProgressBar>
 #include <QSettings>
+#include <QStatusBar>
 #include <QTimer>
 #include <QTranslator>
 #include <QUrl>
+#include <QVector>
 #include <QCryptographicHash>
 
 #include <QListView>
@@ -72,6 +75,8 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <fsengine/bsa.h>
 #include <fsengine/fsmanager.h>
+
+#include <algorithm>
 
 #ifdef WIN32
 #  define WINDOWS_LEAN_AND_MEAN
@@ -956,6 +961,128 @@ void NifSkope::loadFile( const QString & filename )
 
 	setCurrentFile( filename );
 	QTimer::singleShot( 0, this, SLOT( load() ) );
+}
+
+/*
+ *  Browse mode
+ */
+
+void NifSkope::startBrowse( const QString & dir, const QString & startFile )
+{
+	browseRoot = QDir::cleanPath( QDir( dir ).absolutePath() );
+	browseFiles.clear();
+	browseIndex = -1;
+
+	// Name filters are case-insensitive unless QDir::CaseSensitive is given, so this also finds .NIF
+	QDir root( browseRoot );
+	struct Entry { QString folder, name, path; };
+	QVector<Entry> entries;
+	QDirIterator it( browseRoot, QStringList{ "*.nif" }, QDir::Files,
+	                 QDirIterator::Subdirectories | QDirIterator::FollowSymlinks );
+	while ( it.hasNext() ) {
+		QString path = QDir::cleanPath( it.next() );
+		QString rel = root.relativeFilePath( path );
+		int slash = rel.lastIndexOf( '/' );
+		entries.append( { slash < 0 ? QString() : rel.left( slash ), rel.mid( slash + 1 ), path } );
+	}
+
+	// Sort by folder, then file name, case-insensitively, so each folder's files stay together.
+	// Ties (names differing only in case) fall back to a case-sensitive compare for a stable order.
+	std::sort( entries.begin(), entries.end(), []( const Entry & a, const Entry & b ) {
+		int c = a.folder.compare( b.folder, Qt::CaseInsensitive );
+		if ( c == 0 )
+			c = a.name.compare( b.name, Qt::CaseInsensitive );
+		if ( c == 0 )
+			c = a.path.compare( b.path );
+		return c < 0;
+	} );
+
+	for ( const Entry & e : entries )
+		browseFiles << e.path;
+
+	if ( browseFiles.isEmpty() )
+		return;
+
+	browseIndex = 0;
+	if ( !startFile.isEmpty() ) {
+		// An absolute path, or a path relative to the browse root
+		int idx = browseFiles.indexOf( QDir::cleanPath( root.absoluteFilePath( startFile ) ) );
+
+		if ( idx >= 0 )
+			browseIndex = idx;
+		else
+			qInfo().noquote() << QString( "Start file \"%1\" is not in the browse list; starting at the first file" ).arg( startFile );
+	}
+
+	if ( !ogl->browseMode ) {
+		ogl->browseMode = true;
+		connect( ogl, &GLView::browsePrev, this, [this]() { browseStep( -1 ); } );
+		connect( ogl, &GLView::browseNext, this, [this]() { browseStep( +1 ); } );
+		connect( ogl, &GLView::browsePrint, this, &NifSkope::browsePrintCurrent );
+		// Connected after initConnections(), so this runs after onLoadComplete() and its status bar message
+		connect( this, &NifSkope::completeLoading, this, &NifSkope::onBrowseLoadComplete );
+	}
+
+	// Give the 3D view focus so the arrow keys work straight away
+	ogl->setFocus();
+	browseFocus = ogl;
+
+	loadFile( browseFiles.at( browseIndex ) );
+}
+
+void NifSkope::browseStep( int delta )
+{
+	if ( !isBrowsing() )
+		return;
+
+	if ( !saveConfirm() )
+		return;
+
+	int n = browseFiles.count();
+	browseIndex = ((browseIndex + delta) % n + n) % n;
+
+	browseFocus = QApplication::focusWidget();
+
+	// Not openFile(): that would call saveConfirm() a second time
+	loadFile( browseFiles.at( browseIndex ) );
+}
+
+void NifSkope::browsePrintCurrent()
+{
+	// Prefixed so marks stand out from the lines printed after each step
+	if ( isBrowsing() )
+		browsePrint( "MARK " + browseLine() );
+}
+
+QString NifSkope::browseLine() const
+{
+	return QString( "[%1/%2] %3" ).arg( browseIndex + 1 ).arg( browseFiles.count() )
+		.arg( QDir( browseRoot ).relativeFilePath( browseFiles.at( browseIndex ) ) );
+}
+
+void NifSkope::browsePrint( const QString & line )
+{
+	// Same channel as the --debug-textures messages (info level, to stderr)
+	qInfo().noquote() << line;
+	statusBar()->showMessage( line, 5000 );
+}
+
+void NifSkope::onBrowseLoadComplete( bool success, QString & fname )
+{
+	if ( !isBrowsing() || browseIndex < 0 )
+		return;
+
+	if ( QDir::cleanPath( QDir::fromNativeSeparators( fname ) ) != browseFiles.at( browseIndex ) )
+		return;
+
+	QString line = browseLine();
+	if ( !success )
+		line += " (load failed)";
+
+	browsePrint( line );
+
+	if ( browseFocus )
+		browseFocus->setFocus();
 }
 
 void NifSkope::reload()

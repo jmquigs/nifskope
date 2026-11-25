@@ -46,6 +46,8 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <QUdpSocket>
 #include <QUrl>
 
+#include <cstdio>
+
 
 QCoreApplication * createApplication( int &argc, char *argv[] )
 {
@@ -83,6 +85,9 @@ int main( int argc, char * argv[] )
 		a->setApplicationName( "NifSkope " + NifSkopeVersion::rawToMajMin( NIFSKOPE_VERSION ) );
 		a->setApplicationVersion( NIFSKOPE_VERSION );
 		a->setApplicationDisplayName( "NifSkope " + NifSkopeVersion::rawToDisplay( NIFSKOPE_VERSION, true ) );
+
+		// Working directory at launch, for resolving relative --browse paths
+		const QDir launchDir = QDir::current();
 
 		// Must set current directory or this causes issues with several features
 		QDir::setCurrent( qApp->applicationDirPath() );
@@ -122,11 +127,46 @@ int main( int argc, char * argv[] )
 			"Log texture and material lookups (which folders/archives are searched and why files are not found) to stderr" );
 		parser.addOption( debugTexturesOption );
 
+		QCommandLineOption browseOption( {"b", "browse"}, "Browse all .nif files under <dir> with Left/Right arrows", "dir" );
+		parser.addOption( browseOption );
+		parser.addPositionalArgument( "file", "File(s) to open. With --browse, the optional .nif to start at.", "[file...]" );
+
 		// Process options
 		parser.process( *a );
 
 		if ( parser.isSet( debugTexturesOption ) )
 			QLoggingCategory::setFilterRules( "nifskope.texture.info=true" );
+
+		// Browse mode: bypass the IPC single-instance logic, which would hand the file to an
+		// already running instance and drop browse mode
+		if ( parser.isSet( browseOption ) ) {
+			QFileInfo dirInfo( launchDir.absoluteFilePath( parser.value( browseOption ) ) );
+			QString dir = QDir::cleanPath( dirInfo.absoluteFilePath() );
+
+			if ( !dirInfo.isDir() ) {
+				fprintf( stderr, "%s\n", qPrintable( QString( "--browse: not a directory: %1" ).arg( dir ) ) );
+				return 1;
+			}
+
+			QString startFile;
+			if ( !parser.positionalArguments().isEmpty() ) {
+				startFile = parser.positionalArguments().first();
+				// Resolve relative to the launch directory if it exists there; otherwise
+				// startBrowse() tries it relative to the browse directory
+				if ( QFileInfo( launchDir.absoluteFilePath( startFile ) ).exists() )
+					startFile = launchDir.absoluteFilePath( startFile );
+			}
+
+			NifSkope * w = NifSkope::createWindow();
+			w->startBrowse( dir, startFile );
+			if ( !w->isBrowsing() ) {
+				fprintf( stderr, "%s\n", qPrintable( QString( "No .nif files found under %1" ).arg( dir ) ) );
+				delete w;
+				return 1;
+			}
+
+			return a->exec();
+		}
 
 		// Override port value
 		if ( parser.isSet( portOption ) )
