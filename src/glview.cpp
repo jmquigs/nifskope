@@ -1640,6 +1640,28 @@ void GLView::focusOutEvent( QFocusEvent * )
 
 void GLView::keyPressEvent( QKeyEvent * event )
 {
+	if ( browseMode ) {
+		switch ( event->key() ) {
+		case Qt::Key_Left:
+		case Qt::Key_Right:
+		case Qt::Key_X:
+			// Ignore auto-repeat: each load is deferred with a timer, so a held key would queue a burst of loads.
+			// kbd[] is never set for these, so Left/Right do not rotate the camera.
+			if ( !event->isAutoRepeat() ) {
+				if ( event->key() == Qt::Key_Left )
+					emit browsePrev();
+				else if ( event->key() == Qt::Key_Right )
+					emit browseNext();
+				else
+					emit browsePrint();
+			}
+			event->accept();
+			return;
+		default:
+			break;
+		}
+	}
+
 	switch ( event->key() ) {
 	case Qt::Key_Up:
 	case Qt::Key_Down:
@@ -1674,6 +1696,18 @@ void GLView::keyPressEvent( QKeyEvent * event )
 
 void GLView::keyReleaseEvent( QKeyEvent * event )
 {
+	if ( browseMode ) {
+		switch ( event->key() ) {
+		case Qt::Key_Left:
+		case Qt::Key_Right:
+		case Qt::Key_X:
+			event->accept();
+			return;
+		default:
+			break;
+		}
+	}
+
 	switch ( event->key() ) {
 	case Qt::Key_Up:
 	case Qt::Key_Down:

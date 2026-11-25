@@ -38,6 +38,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <QFileInfo>
 #include <QLocale>
 #include <QModelIndex>
+#include <QPointer>
 #include <QSet>
 #include <QUndoCommand>
 
@@ -157,6 +158,20 @@ public:
 
 	static void reloadTheme();
 
+	/*! Start browse mode: step through every .nif under @p dir with Left/Right in the 3D view.
+	 *
+	 * @param dir		Directory to search recursively for .nif files.
+	 * @param startFile	Optional file to start at, if it is in the browse list.
+	 * If no .nif files are found, browse mode is not started (see isBrowsing()).
+	 */
+	void startBrowse( const QString & dir, const QString & startFile = QString() );
+	//! Load the file @p delta (+1 or -1) steps away in the browse list, wrapping around
+	void browseStep( int delta );
+	//! Print the browse position and path of the current file
+	void browsePrintCurrent();
+	//! Whether browse mode is active
+	bool isBrowsing() const { return !browseFiles.isEmpty(); }
+
 signals:
 	void beginLoading();
 	void completeLoading( bool, QString & );
@@ -234,6 +249,7 @@ protected slots:
 	void onSaveBegin();
 
 	void onLoadComplete( bool, QString & );
+	void onBrowseLoadComplete( bool, QString & );
 	void onSaveComplete( bool, QString & );
 
 	//! Display a context menu at the specified position
@@ -320,6 +336,21 @@ private:
 
 	QString currentFile;
 	BSA * currentArchive = nullptr;
+
+	//! Browse mode: absolute paths of all .nif files under browseRoot, sorted
+	QStringList browseFiles;
+	//! Browse mode: index into browseFiles of the current file
+	int browseIndex = -1;
+	//! Browse mode: absolute path of the browsed directory
+	QString browseRoot;
+	//! Browse mode: widget that had focus when the load started (the 3D view); onLoadBegin() disables the
+	//! window, which drops keyboard focus, so it is restored after the load
+	QPointer<QWidget> browseFocus;
+
+	//! Browse mode: "[i/n] relative/path.nif" for the current file
+	QString browseLine() const;
+	//! Browse mode: print @p line to stderr and the status bar
+	void browsePrint( const QString & line );
 
 	QByteArray filehash;
 
